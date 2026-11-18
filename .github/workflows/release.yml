@@ -1,0 +1,134 @@
+# Builds Plater for FF14 when a version tag (v1.2.3) is pushed, publishes the zip as a release in the
+# public Gompex/DalamudPlugins repo and updates only this plugin's entry in its repo.json.
+# Needs the secret RELEASE_TOKEN: a token with "Contents: Read and write" on Gompex/DalamudPlugins.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dalamudplugins-repo-json
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      INTERNAL_NAME: PlaterXIV
+      RELEASE_REPO: Gompex/DalamudPlugins
+    steps:
+      - name: Checkout (with KamiToolKit submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version from tag
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got ${{ github.ref_name }}" }
+          "VERSION=$version" >> $env:GITHUB_ENV
+          "ASSEMBLY_VERSION=$version.0" >> $env:GITHUB_ENV
+
+      - name: Download Dalamud dev libraries
+        shell: pwsh
+        run: |
+          $hooks = Join-Path $env:APPDATA 'XIVLauncher\addon\Hooks\dev'
+          New-Item -ItemType Directory -Force $hooks | Out-Null
+          Invoke-WebRequest https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath $hooks -Force
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build .\PlaterXIV -c Release -p:Version=$env:ASSEMBLY_VERSION
+
+      - name: Find packaged zip and manifest
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Recurse -Path PlaterXIV\bin\Release -Filter latest.zip | Select-Object -First 1
+          $manifest = Get-ChildItem -Recurse -Path PlaterXIV\bin\Release -Filter "$env:INTERNAL_NAME.json" |
+            Where-Object { $_.Directory.FullName -eq $zip.Directory.FullName } | Select-Object -First 1
+          if (-not $zip -or -not $manifest) { throw "DalamudPackager output not found" }
+          $asset = "$env:INTERNAL_NAME-$env:ASSEMBLY_VERSION.zip"
+          Copy-Item $zip.FullName $asset
+          "ASSET=$asset" >> $env:GITHUB_ENV
+          "MANIFEST=$($manifest.FullName)" >> $env:GITHUB_ENV
+
+      - name: Create release in DalamudPlugins
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          $tag = "$env:INTERNAL_NAME-v$env:VERSION"
+          gh release create $tag $env:ASSET --repo $env:RELEASE_REPO --target main `
+            --title "Plater for FF14 v$env:VERSION" --notes "Plater for FF14 $env:VERSION"
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Update repo.json (only this plugin's entry)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          $m = Get-Content $env:MANIFEST -Raw | ConvertFrom-Json
+          $url = "https://github.com/$env:RELEASE_REPO/releases/download/$env:RELEASE_TAG/$env:ASSET"
+          $entry = [ordered]@{
+            Author              = $m.Author
+            Name                = $m.Name
+            InternalName        = $m.InternalName
+            AssemblyVersion     = $m.AssemblyVersion
+            Description         = $m.Description
+            ApplicableVersion   = 'any'
+            Tags                = @($m.Tags)
+            DalamudApiLevel     = $m.DalamudApiLevel
+            LoadRequiredState   = 0
+            LoadSync            = $false
+            CanUnloadAsync      = $false
+            LoadPriority        = 0
+            Punchline           = $m.Punchline
+            AcceptsFeedback     = $false
+            DownloadLinkInstall = $url
+            DownloadLinkUpdate  = $url
+            DownloadLinkTesting = $url
+            IsHide              = $false
+            IsTestingExclusive  = $false
+            LastUpdate          = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            DownloadCount       = 0
+          }
+
+          # Retry in case another plugin's release pushed repo.json at the same moment.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Remove-Item -Recurse -Force repo -ErrorAction SilentlyContinue
+            git clone --depth 1 "https://x-access-token:$env:GH_TOKEN@github.com/$env:RELEASE_REPO.git" repo
+            $path = 'repo\repo.json'
+            $list = @()
+            if (Test-Path $path) { $list = @(Get-Content $path -Raw | ConvertFrom-Json) }
+
+            # Keep every other plugin exactly as it is; replace ours in place, or add it at the end.
+            $out = [System.Collections.Generic.List[object]]::new()
+            $replaced = $false
+            foreach ($p in $list) {
+              if ($p.InternalName -eq $env:INTERNAL_NAME) { $out.Add([pscustomobject]$entry); $replaced = $true }
+              else { $out.Add($p) }
+            }
+            if (-not $replaced) { $out.Add([pscustomobject]$entry) }
+
+            ConvertTo-Json -InputObject @($out) -Depth 10 | Set-Content $path -Encoding utf8NoBOM
+
+            git -C repo config user.name 'github-actions[bot]'
+            git -C repo config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git -C repo add repo.json
+            git -C repo commit -m "$env:INTERNAL_NAME v$env:VERSION"
+            git -C repo push
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Start-Sleep -Seconds (5 * $attempt)
+          }
+          throw "Could not push repo.json after 3 attempts"

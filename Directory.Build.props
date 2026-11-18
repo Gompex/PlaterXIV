@@ -1,0 +1,7 @@
+<Project>
+    <PropertyGroup>
+        <!-- Lets macOS (XIV on Mac) and Linux build the net10.0-windows target. Harmless on Windows.
+             Applies to KamiToolKit too, because MSBuild finds this file in a parent folder. -->
+        <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    </PropertyGroup>
+</Project>

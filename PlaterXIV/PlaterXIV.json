@@ -1,0 +1,13 @@
+{
+  "Author": "Dawid",
+  "Name": "Plater for FF14",
+  "Punchline": "Combat nameplates: health, casts, your DoTs and threat at a glance.",
+  "Description": "A display-only enemy nameplate overhaul inspired by threat-plate addons. Health, cast bars with interruptible state, your own DoTs, aggro colours for tanks and threat warnings for DPS and healers, target and focus highlights, per-enemy rules and job profiles. Disabled in PvP.",
+  "Tags": [
+    "nameplate",
+    "combat",
+    "ui",
+    "enmity"
+  ],
+  "RepoUrl": "https://github.com/Gompex/DalamudPlugins"
+}

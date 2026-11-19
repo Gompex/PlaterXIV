@@ -46,6 +46,10 @@ public sealed unsafe class PlateNode : ResNode
     private readonly TextNode level;
     private readonly TextNode tag;
     private readonly ColorImageNode focusMark;
+    // Shield after the name (a tank holds it and it has been hit): black outline + coloured fill, each a bar and a diamond.
+    private readonly ResNode shield;
+    private readonly ColorImageNode shieldEdgeTop, shieldEdgePoint, shieldTop, shieldPoint;
+    private int lastShield = -1;
     private int lastFocus = -1;
     private readonly ColorImageNode border;
     private readonly ColorImageNode track;
@@ -182,6 +186,17 @@ public sealed unsafe class PlateNode : ResNode
             IsVisible = false,
         };
         focusMark.AttachNode(this);
+
+        shield = new ResNode { Position = new Vector2(BarX, NameY + 3f), Size = new Vector2(10f, 11f), IsVisible = false };
+        shield.AttachNode(this);
+        shieldEdgeTop = new ColorImageNode { Position = new Vector2(0f, 0f), Size = new Vector2(10f, 7f), Color = black };
+        shieldEdgeTop.AttachNode(shield);
+        shieldEdgePoint = Diamond(new Vector2(5f, 6f), 7.07f, black);
+        shieldEdgePoint.AttachNode(shield);
+        shieldTop = new ColorImageNode { Position = new Vector2(1f, 1f), Size = new Vector2(8f, 5f), Color = skin.AggroHave };
+        shieldTop.AttachNode(shield);
+        shieldPoint = Diamond(new Vector2(5f, 6f), 5.66f, skin.AggroHave);
+        shieldPoint.AttachNode(shield);
 
         // Rule tag like "ADD": dark text on the rule's highlight colour, right after the name.
         tag = new TextNode
@@ -327,6 +342,7 @@ public sealed unsafe class PlateNode : ResNode
         arrowLeft.Color = skin.Accent;
         arrowRight.Color = skin.Accent;
         focusMark.Color = skin.Focus;
+        lastShield = -1; // recolour the shield with the new skin on the next Apply
 
         for (var i = 0; i < MaxDots; i++)
             dotTimers[i].FontSize = skin.NumberFontSize;
@@ -347,6 +363,17 @@ public sealed unsafe class PlateNode : ResNode
         lastTagColor = new Vector4(-1f);
         tag.FontSize = skin.NumberFontSize;
     }
+
+    /// <summary>A square of the given side turned 45°, centred on <paramref name="centre"/>.</summary>
+    private static ColorImageNode Diamond(Vector2 centre, float side, Vector4 color) => new()
+    {
+        Position = centre - new Vector2(side / 2f, side / 2f),
+        Size = new Vector2(side, side),
+        OriginX = side / 2f,
+        OriginY = side / 2f,
+        RotationDegrees = 45f,
+        Color = color,
+    };
 
     private static ColorImageNode MakeDiamond(Vector2 position, Vector4 color) => new()
     {
@@ -405,6 +432,16 @@ public sealed unsafe class PlateNode : ResNode
             relayout = true;
         }
 
+        var shieldKind = config.SecuredShield ? aggro.Shield : (byte)0;
+        if (shieldKind != lastShield)
+        {
+            lastShield = shieldKind;
+            shield.IsVisible = shieldKind != 0;
+            if (shieldKind != 0)
+                shieldTop.Color = shieldPoint.Color = shieldKind == 1 ? skin.AggroHave : skin.AggroCoTank;
+            relayout = true;
+        }
+
         if (rule.Tag != null && rule.HighlightColor != lastTagColor)
         {
             lastTagColor = rule.HighlightColor;
@@ -431,7 +468,7 @@ public sealed unsafe class PlateNode : ResNode
         }
 
         ApplyHp(d);
-        ApplyAggro(aggro, idleRgba);
+        ApplyAggro(aggro, idleRgba, config.PaleUntagged && aggro.Untagged);
         ApplyTargetStyle(targetStyle, rule.Highlight ? rule.HighlightColor : (Vector4?)null);
 
         if (config.ShowCastBar) ApplyCast(d);
@@ -490,7 +527,14 @@ public sealed unsafe class PlateNode : ResNode
             tag.Width = tagWidth - 4f;
         }
 
-        chip.X = MathF.Round(start + levelWidth + nameWidth + tagWidth + 4f);
+        var shieldWidth = 0f;
+        if (shield.IsVisible)
+        {
+            shield.X = MathF.Round(start + levelWidth + nameWidth + tagWidth + 4f);
+            shieldWidth = 13f;
+        }
+
+        chip.X = MathF.Round(start + levelWidth + nameWidth + tagWidth + shieldWidth + 4f);
     }
 
     /// <summary>Muted far below me, normal near my level, warning 3+ above, danger 6+ above.</summary>
@@ -543,7 +587,7 @@ public sealed unsafe class PlateNode : ResNode
         }
     }
 
-    private void ApplyAggro(in AggroResult aggro, uint idleRgba)
+    private void ApplyAggro(in AggroResult aggro, uint idleRgba, bool untagged)
     {
         var color = aggro.State switch
         {
@@ -554,6 +598,11 @@ public sealed unsafe class PlateNode : ResNode
             AggroState.Idle when idleRgba != 0 => FromGameColor(idleRgba),
             _ => skin.Hp,
         };
+
+        // Nobody has hit it yet: a pale version of the colour. A DPS/healer sees "don't hit it yet" in pale yellow.
+        if (untagged && aggro.State != AggroState.Idle)
+            color = Pale(aggro.State is AggroState.Safe or AggroState.Warn ? skin.ThreatWarn : color);
+
         if (color != lastFillColor)
         {
             lastFillColor = color;
@@ -611,6 +660,9 @@ public sealed unsafe class PlateNode : ResNode
         };
         chip.IsVisible = true;
     }
+
+    private Vector4 Pale(Vector4 color) => new(
+        (color.X + skin.Text.X) * 0.5f, (color.Y + skin.Text.Y) * 0.5f, (color.Z + skin.Text.Z) * 0.5f, 1f);
 
     /// <summary>The game's plate colour (ByteColor RGBA), a little darker so white text stays readable.</summary>
     private static Vector4 FromGameColor(uint rgba)

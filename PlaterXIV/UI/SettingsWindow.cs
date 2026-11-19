@@ -108,8 +108,8 @@ public sealed unsafe class SettingsWindow : NativeAddon
         ];
         previewAggro =
         [
-            new AggroResult { State = AggroState.Have, Percent = -1 },
-            new AggroResult { State = AggroState.CoTank, HolderJob = 19, Percent = -1 }, // PLD
+            new AggroResult { State = AggroState.Have, Percent = -1, Shield = 1 },
+            new AggroResult { State = AggroState.CoTank, HolderJob = 19, Percent = -1, Untagged = true }, // PLD, nobody has hit it yet
             new AggroResult { State = AggroState.Lost, HolderJob = 24, Percent = -1 },   // WHM
         ];
     }
@@ -227,6 +227,10 @@ public sealed unsafe class SettingsWindow : NativeAddon
 
         Header(page, "DPS / healer");
         Slider(page, "Threat warning from %", 50, 99, () => config.ThreatWarnPercent, v => config.ThreatWarnPercent = v);
+
+        Header(page, "Who has hit it");
+        Check(page, "Shield after the name once a tank holds it and it's been hit", () => config.SecuredShield, v => config.SecuredShield = v);
+        Check(page, "Pale bar while nobody has hit it yet (light-red in game)", () => config.PaleUntagged, v => config.PaleUntagged = v);
 
         Header(page, "Click");
         Check(page, "Middle-click a plate: cast my interrupt on it", () => config.MiddleClickInterrupt, v => config.MiddleClickInterrupt = v);

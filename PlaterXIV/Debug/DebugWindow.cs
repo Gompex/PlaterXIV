@@ -270,7 +270,7 @@ public sealed unsafe class DebugWindow : Window
             ImGui.TextUnformatted(DescribeStatuses(d));
             ImGui.TableNextColumn();
             var a = aggro.Resolve(d, config.ThreatWarnPercent);
-            ImGui.TextUnformatted($"{a.State}{(a.HolderJob != 0 ? " " + names.JobAbbreviation(a.HolderJob) : "")}{(a.Percent >= 0 ? $" {a.Percent}%" : "")}");
+            ImGui.TextUnformatted($"{a.State}{(a.HolderJob != 0 ? " " + names.JobAbbreviation(a.HolderJob) : "")}{(a.Percent >= 0 ? $" {a.Percent}%" : "")} · tag {d.TagType}{(a.Untagged ? " UNTAGGED" : "")}{(a.Shield != 0 ? $" shield {a.Shield}" : "")}");
         }
 
         ImGui.EndTable();

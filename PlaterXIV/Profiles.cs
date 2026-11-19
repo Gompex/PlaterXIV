@@ -34,6 +34,11 @@ public sealed class PlateProfile
     /// <summary>Middle-click one of our plates: cast my job's interrupt on that enemy (one click, one action).</summary>
     public bool MiddleClickInterrupt { get; set; }
 
+    /// <summary>Pale HP bar while nobody has hit the enemy yet (it follows whoever hits it first).</summary>
+    public bool PaleUntagged { get; set; } = true;
+    /// <summary>Shield after the name once a tank holds the enemy and it has been hit.</summary>
+    public bool SecuredShield { get; set; } = true;
+
     // Cast bar and DoTs
     public bool ShowCastBar { get; set; } = true;
     public bool ShowMyDots { get; set; } = true;

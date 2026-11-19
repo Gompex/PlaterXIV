@@ -182,6 +182,7 @@ public sealed unsafe class PlateScanner : IDisposable
             d.Level = 0;
             d.NameId = 0;
             d.EnemyTargetId = 0;
+            d.TagType = 0;
             d.IsCasting = d.CastInterruptible = false;
             d.CastActionType = 0;
             d.CastActionId = 0;
@@ -197,6 +198,7 @@ public sealed unsafe class PlateScanner : IDisposable
                 d.Level = ch->CharacterData.Level;
                 d.NameId = ch->NameId;
                 d.EnemyTargetId = ch->TargetId;
+                d.TagType = ch->CharacterData.CombatTagType;
 
                 var bc = (CSBattleChara*)go;
                 ref var cast = ref bc->CastInfo;

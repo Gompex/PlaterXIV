@@ -34,6 +34,10 @@ public struct AggroResult
     public AggroState State;
     public uint HolderJob;
     public int Percent; // -1 when not shown
+    /// <summary>Fighting, but nobody has hit it yet: it follows whoever hits it first. Drawn as a pale bar.</summary>
+    public bool Untagged;
+    /// <summary>Shield after the name: 0 none, 1 I (tank) hold it, 2 another tank holds it. Only once it has been hit.</summary>
+    public byte Shield;
 }
 
 /// <summary>
@@ -81,9 +85,13 @@ public sealed unsafe class AggroResolver
         var hasTarget = targetObjectId != 0 && targetObjectId != InvalidId;
         var onMyList = d.MyEnmity >= 0;
 
+        var untagged = hasTarget && !d.Tagged;
+
         if (hasTarget && targetObjectId == localEntityId)
         {
             result.State = TankMode ? AggroState.Have : AggroState.Pulled;
+            result.Untagged = untagged;
+            if (TankMode && d.Tagged) result.Shield = 1;
             return result;
         }
 
@@ -94,13 +102,15 @@ public sealed unsafe class AggroResolver
         var holderIsPartyPlayer = holder != null
                                   && holder->ObjectKind == ObjectKind.Pc
                                   && (onMyList || (groups != null && groups->MainGroup.IsEntityIdInParty(holder->EntityId)));
+        var holderJob = holderIsPartyPlayer ? ((CSCharacter*)holder)->CharacterData.ClassJob : 0u;
+        var holderIsTank = holderIsPartyPlayer && names.JobRole(holderJob) == TankRole;
 
         if (TankMode)
         {
             if (holderIsPartyPlayer)
             {
-                result.HolderJob = ((CSCharacter*)holder)->CharacterData.ClassJob;
-                result.State = names.JobRole(result.HolderJob) == TankRole ? AggroState.CoTank : AggroState.Lost;
+                result.HolderJob = holderJob;
+                result.State = holderIsTank ? AggroState.CoTank : AggroState.Lost;
             }
             else if (onMyList)
             {
@@ -108,6 +118,8 @@ public sealed unsafe class AggroResolver
                 result.State = d.MyEnmity >= 100 ? AggroState.Have : AggroState.Lost;
             }
 
+            result.Untagged = untagged && result.State != AggroState.Idle;
+            if (holderIsTank && d.Tagged) result.Shield = 2;
             return result;
         }
 
@@ -121,6 +133,8 @@ public sealed unsafe class AggroResolver
             result.State = AggroState.Safe; // my party is fighting it, I haven't touched it yet
         }
 
+        result.Untagged = untagged && result.State != AggroState.Idle;
+        if (holderIsTank && d.Tagged) result.Shield = 2;
         return result;
     }
 

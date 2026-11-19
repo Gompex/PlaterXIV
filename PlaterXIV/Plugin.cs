@@ -17,7 +17,7 @@ namespace PlaterXIV;
 public sealed class Plugin : IAsyncDalamudPlugin
 {
     /// <summary>Changes with every build zip. Checked by Select-String after extracting.</summary>
-    public const string BuildTag = "PLX-101-7f3c";
+    public const string BuildTag = "PLX-102-b8d1";
 
     private const string CommandName = "/plater";
 

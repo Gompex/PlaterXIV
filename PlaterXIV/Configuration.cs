@@ -202,6 +202,8 @@ public sealed class Configuration : IPluginConfiguration
     [JsonIgnore] public int ThreatWarnPercent { get => Active.ThreatWarnPercent; set => Active.ThreatWarnPercent = value; }
     [JsonIgnore] public bool IdleHostilityColor { get => Active.IdleHostilityColor; set => Active.IdleHostilityColor = value; }
     [JsonIgnore] public bool MiddleClickInterrupt { get => Active.MiddleClickInterrupt; set => Active.MiddleClickInterrupt = value; }
+    [JsonIgnore] public bool PaleUntagged { get => Active.PaleUntagged; set => Active.PaleUntagged = value; }
+    [JsonIgnore] public bool SecuredShield { get => Active.SecuredShield; set => Active.SecuredShield = value; }
     [JsonIgnore] public bool ShowCastBar { get => Active.ShowCastBar; set => Active.ShowCastBar = value; }
     [JsonIgnore] public bool ShowMyDots { get => Active.ShowMyDots; set => Active.ShowMyDots = value; }
     [JsonIgnore] public int MaxDots { get => Active.MaxDots; set => Active.MaxDots = value; }

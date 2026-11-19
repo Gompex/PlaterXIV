@@ -62,6 +62,10 @@ public sealed class PlateData
     public float CastTotal;
 
     // Enmity: my enmity % on this enemy from UIState.Hater, -1 when I'm not on its list
+    /// <summary>Character.CharacterData.CombatTagType: 0 = nobody has hit it yet (the game's light-red name).</summary>
+    public byte TagType;
+    public bool Tagged => TagType != 0;
+
     public int MyEnmity = -1;
 
     // Statuses I applied to this object

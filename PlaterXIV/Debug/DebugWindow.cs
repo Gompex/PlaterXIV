@@ -53,7 +53,10 @@ public sealed unsafe class DebugWindow : Window
     public override void Draw()
     {
         ImGui.TextUnformatted($"Build {Plugin.BuildTag} · frame {scanner.Frame} · scan {scanner.LastScanMicroseconds:F1} µs");
-        ImGui.TextUnformatted($"Local {scanner.LocalEntityId:X8} · PvP {scanner.InPvP} · ObjectInfoCount {scanner.ObjectInfoCount} · ActiveNamePlateCount {scanner.ActiveNamePlateCount}");
+        ImGui.TextUnformatted($"Local {scanner.LocalEntityId:X8} · PvP {scanner.InPvP} · ObjectInfoCount {scanner.ObjectInfoCount} · ActiveNamePlateCount {scanner.ActiveNamePlateCount} · hide refused {hider.RefusedLastFrame} · names repaired {hider.NamesRepaired}");
+        ImGui.SameLine();
+        if (ImGui.Button("Show every game name now"))
+            Services.Log.Information($"[Plater] showed {hider.ForceShowNames()} hidden game names");
 
         ImGui.Checkbox("Show every plate kind (not only enemies)", ref allKinds);
         ImGui.SameLine();
@@ -205,7 +208,7 @@ public sealed unsafe class DebugWindow : Window
     {
         ImGui.TextUnformatted($"Plates this frame: {scanner.Count}");
         const ImGuiTableFlags flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingFixedFit | ImGuiTableFlags.Resizable;
-        if (!ImGui.BeginTable("##plates", 15, flags)) return;
+        if (!ImGui.BeginTable("##plates", 16, flags)) return;
         ImGui.TableSetupColumn("Slot");
         ImGui.TableSetupColumn("NP# / Arr#");
         ImGui.TableSetupColumn("Kind");
@@ -221,6 +224,7 @@ public sealed unsafe class DebugWindow : Window
         ImGui.TableSetupColumn("Enemy's target");
         ImGui.TableSetupColumn("My statuses");
         ImGui.TableSetupColumn("Aggro");
+        ImGui.TableSetupColumn("Game name");
         ImGui.TableHeadersRow();
 
         for (var i = 0; i < scanner.Count; i++)
@@ -271,6 +275,10 @@ public sealed unsafe class DebugWindow : Window
             ImGui.TableNextColumn();
             var a = aggro.Resolve(d, config.ThreatWarnPercent);
             ImGui.TextUnformatted($"{a.State}{(a.HolderJob != 0 ? " " + names.JobAbbreviation(a.HolderJob) : "")}{(a.Percent >= 0 ? $" {a.Percent}%" : "")} · tag {d.TagType}{(a.Untagged ? " UNTAGGED" : "")}{(a.Shield != 0 ? $" shield {a.Shield}" : "")}");
+            ImGui.TableNextColumn();
+            var nameState = hider.DescribeName((AddonNamePlate*)scanner.NamePlateAddon, d.ArrayNamePlateIndex, d.Slot);
+            if (nameState.StartsWith("HIDDEN")) ImGui.TextColored(Bad, nameState);
+            else ImGui.TextUnformatted(nameState);
         }
 
         ImGui.EndTable();

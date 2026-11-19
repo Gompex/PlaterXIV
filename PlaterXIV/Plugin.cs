@@ -17,7 +17,7 @@ namespace PlaterXIV;
 public sealed class Plugin : IAsyncDalamudPlugin
 {
     /// <summary>Changes with every build zip. Checked by Select-String after extracting.</summary>
-    public const string BuildTag = "PLX-102-b8d1";
+    public const string BuildTag = "PLX-102-a6c0";
 
     private const string CommandName = "/plater";
 
@@ -143,6 +143,9 @@ public sealed class Plugin : IAsyncDalamudPlugin
                 config.Save();
                 hider?.Refresh();
                 Services.Log.Information($"[Plater] plates {(config.Enabled ? "on" : "off")}");
+                break;
+            case "names":
+                Services.Log.Information($"[Plater] showed {hider?.ForceShowNames() ?? 0} hidden game names");
                 break;
             case "native":
                 config.HideNativeEnemyPlates = !config.HideNativeEnemyPlates;

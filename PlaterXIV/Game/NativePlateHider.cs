@@ -21,7 +21,9 @@ public sealed unsafe class NativePlateHider : IDisposable
     private const byte GaugeBackgroundBit = 8;
 
     // NamePlateNumberArray flags (see ClientStructs): what the game itself wants drawn on a plate.
+    private const int VisibleName = 0x1;
     private const int VisibleGauge = 0x2;
+    private const int AuditEveryFrames = 30;
     private const int DrawFlagEnableGauge = 0x20;
 
     private readonly int[] arraySlotOf = new int[PlateScanner.MaxPlates];
@@ -30,21 +32,51 @@ public sealed unsafe class NativePlateHider : IDisposable
     private readonly long[] usedFrame = new long[PlateScanner.MaxPlates];
     private nint lastAddon;
     private long frame;
+    private NamePlateNumberArray* numbers;
+
+    /// <summary>Hide requests turned down last frame because the game's slot belonged to something else.</summary>
+    public int RefusedLastFrame { get; private set; }
+
+    /// <summary>Names found hidden that the game wants shown (left over from an unload, a reload or an older build), shown again.</summary>
+    public int NamesRepaired { get; private set; }
+    private int refused;
 
     /// <summary>Start of a frame. If the game rebuilt its NamePlate window, forget the old slots.</summary>
     public void BeginFrame(AddonNamePlate* addon)
     {
         frame++;
+        RefusedLastFrame = refused;
+        refused = 0;
         if ((nint)addon != lastAddon)
         {
             Array.Clear(hiddenMask);
             lastAddon = (nint)addon;
         }
+
+        // Which object each of the game's 50 plate slots is drawing this frame (the game's own mapping).
+        numbers = NamePlateNumberArray.Instance();
+        if (numbers != null) MapArraySlots(numbers);
+        else Array.Fill(arraySlotOf, -1);
     }
 
-    public void HideOn(AddonNamePlate* addon, int namePlateIndex)
+    /// <summary>
+    /// Hides the game's name and gauge in plate slot <paramref name="namePlateIndex"/>, but only after checking
+    /// with the game that the slot really draws this enemy right now. The object list we read can lag a
+    /// frame behind the slots (a mob dies, a key or chest takes its slot): without the check we would keep
+    /// hiding that object's name, and since the game doesn't redraw unchanged plates it stayed hidden.
+    /// </summary>
+    public void HideOn(AddonNamePlate* addon, int namePlateIndex, uint entityId)
     {
-        if (addon == null || namePlateIndex < 0 || namePlateIndex >= PlateScanner.MaxPlates) return;
+        if (addon == null || numbers == null || namePlateIndex < 0 || namePlateIndex >= PlateScanner.MaxPlates) return;
+
+        var slot = arraySlotOf[namePlateIndex];
+        if (slot < 0) return; // the game isn't drawing this slot
+        ref var data = ref numbers->ObjectData[slot];
+        if (data.NamePlateKind != UIObjectKind.BattleNpcEnemy || (data.EntityId != 0 && data.EntityId != entityId))
+        {
+            refused++;
+            return;
+        }
 
         usedFrame[namePlateIndex] = frame;
         ref var plate = ref addon->NamePlateObjectArray[namePlateIndex];
@@ -59,7 +91,11 @@ public sealed unsafe class NativePlateHider : IDisposable
     /// <summary>End of a frame: give back every slot we hid that is not one of our enemy plates any more.</summary>
     public void EndFrame(AddonNamePlate* addon)
     {
-        if (addon == null) return;
+        if (addon == null || numbers == null) return;
+
+        // Safety net, every half second and on the first frame: any name the game wants drawn but that is
+        // hidden, on a slot we are not hiding right now, is shown again.
+        if (frame % AuditEveryFrames == 1) RepairNames(addon);
 
         var pending = false;
         for (var i = 0; i < PlateScanner.MaxPlates; i++)
@@ -67,10 +103,6 @@ public sealed unsafe class NativePlateHider : IDisposable
             if (hiddenMask[i] != 0 && usedFrame[i] != frame) { pending = true; break; }
         }
         if (!pending) return;
-
-        var numbers = NamePlateNumberArray.Instance();
-        if (numbers == null) return;
-        MapArraySlots(numbers);
 
         var restored = false;
         for (var i = 0; i < PlateScanner.MaxPlates; i++)
@@ -87,6 +119,59 @@ public sealed unsafe class NativePlateHider : IDisposable
 
         if (restored)
             Services.NamePlateGui.RequestRedraw(); // let the game re-check its own plates too
+    }
+
+    private void RepairNames(AddonNamePlate* addon)
+    {
+        var count = Math.Min(numbers->ActiveNamePlateCount, PlateScanner.MaxPlates);
+        for (var a = 0; a < count; a++)
+        {
+            ref var data = ref numbers->ObjectData[a];
+            var index = data.NamePlateObjectIndex;
+            if (index < 0 || index >= PlateScanner.MaxPlates || usedFrame[index] == frame) continue;
+            if ((data.VisibilityFlags & VisibleName) == 0) continue;
+
+            var node = (AtkResNode*)addon->NamePlateObjectArray[index].NameText;
+            if (node == null || node->IsVisible()) continue;
+            node->ToggleVisibility(true);
+            NamesRepaired++;
+        }
+    }
+
+    /// <summary>
+    /// Test helper (/plater names, debug button): shows the game's name on every plate we are not hiding
+    /// this frame, whatever the game's flags say. Returns how many were hidden.
+    /// </summary>
+    public int ForceShowNames()
+    {
+        var addon = (AddonNamePlate*)RaptureAtkUnitManager.Instance()->GetAddonByName("NamePlate");
+        var array = NamePlateNumberArray.Instance();
+        if (addon == null || array == null) return 0;
+
+        var shownNow = 0;
+        var count = Math.Min(array->ActiveNamePlateCount, PlateScanner.MaxPlates);
+        for (var a = 0; a < count; a++)
+        {
+            var index = array->ObjectData[a].NamePlateObjectIndex;
+            if (index < 0 || index >= PlateScanner.MaxPlates || usedFrame[index] == frame) continue;
+            var node = (AtkResNode*)addon->NamePlateObjectArray[index].NameText;
+            if (node == null || node->IsVisible()) continue;
+            node->ToggleVisibility(true);
+            shownNow++;
+        }
+
+        return shownNow;
+    }
+
+    /// <summary>Debug: is the game's name node in this slot visible, and what the game's flags say.</summary>
+    public string DescribeName(AddonNamePlate* addon, int namePlateIndex, int arraySlot)
+    {
+        if (addon == null || namePlateIndex < 0 || namePlateIndex >= PlateScanner.MaxPlates) return "-";
+        var node = (AtkResNode*)addon->NamePlateObjectArray[namePlateIndex].NameText;
+        var array = NamePlateNumberArray.Instance();
+        var flags = array != null && arraySlot >= 0 && arraySlot < PlateScanner.MaxPlates ? array->ObjectData[arraySlot].VisibilityFlags : -1;
+        var state = node == null ? "no node" : node->IsVisible() ? "shown" : "HIDDEN";
+        return $"{state} · flags 0x{flags:X} · ours {(hiddenMask[namePlateIndex] != 0 ? "yes" : "no")}";
     }
 
     private void MapArraySlots(NamePlateNumberArray* numbers)
@@ -136,15 +221,33 @@ public sealed unsafe class NativePlateHider : IDisposable
     public void Dispose()
     {
         var addon = (AddonNamePlate*)RaptureAtkUnitManager.Instance()->GetAddonByName("NamePlate");
-        var numbers = NamePlateNumberArray.Instance();
+        numbers = NamePlateNumberArray.Instance();
         if (addon != null && numbers != null && (nint)addon == lastAddon)
         {
             MapArraySlots(numbers);
             for (var i = 0; i < PlateScanner.MaxPlates; i++)
             {
-                if (hiddenMask[i] != 0 && arraySlotOf[i] >= 0)
+                if (hiddenMask[i] == 0) continue;
+                if (arraySlotOf[i] >= 0)
+                {
                     Restore(addon, i, ref numbers->ObjectData[arraySlotOf[i]]);
+                }
+                else
+                {
+                    // Not drawn right now: put back exactly what we hid. The game only re-applies what it thinks
+                    // changed, so a name left hidden here stayed hidden on whoever got this slot next.
+                    ref var plate = ref addon->NamePlateObjectArray[i];
+                    var mask = hiddenMask[i];
+                    if ((mask & NameBit) != 0) Set((AtkResNode*)plate.NameText, true);
+                    if ((mask & GaugeContainerBit) != 0) Set((AtkResNode*)plate.GaugeContainer, true);
+                    if ((mask & GaugeFillBit) != 0) Set((AtkResNode*)plate.GaugeFill, true);
+                    if ((mask & GaugeBackgroundBit) != 0) Set((AtkResNode*)plate.GaugeBackground, true);
+                    hiddenMask[i] = 0;
+                }
             }
+
+            frame++; // nothing is ours any more
+            RepairNames(addon);
         }
 
         Refresh();

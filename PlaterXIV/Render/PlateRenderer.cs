@@ -122,7 +122,7 @@ public sealed unsafe class PlateRenderer : IDisposable
                 if (rule.Hide || IsFarBelowMe(d))
                 {
                     // Hidden by a rule: no plate of ours, and the game's name stays hidden too.
-                    if (hideNative) hider.HideOn(addon, index);
+                    if (hideNative) hider.HideOn(addon, index, d.EntityId);
                     continue;
                 }
 
@@ -169,7 +169,7 @@ public sealed unsafe class PlateRenderer : IDisposable
                 shown++;
 
                 if (hideNative)
-                    hider.HideOn(addon, index);
+                    hider.HideOn(addon, index, d.EntityId);
             }
         }
 

@@ -41,6 +41,7 @@ public sealed unsafe class PlateRenderer : IDisposable
     private Skin skin = Skin.Signal;
     private int skinRevision = -1;
     private uint lastJob;
+    private PlateNode? onTop; // the target's plate, moved to the end of the layer so it draws over the others
 
     // Rule match cache per game plate slot: recomputed only when the enemy or the rules change.
     private readonly ulong[] ruleObject = new ulong[PlateScanner.MaxPlates];
@@ -156,6 +157,14 @@ public sealed unsafe class PlateRenderer : IDisposable
                     ? AggroResolver.GameHostilityColor(d) : 0u;
 
                 plate.Apply(d, Anchor(d), scale, alpha, d.IsTarget, threat, idleColor, scanner.LocalLevel, rule, config);
+
+                // Target on top: re-link its plate as the last child once, when the target changes.
+                if (d.IsTarget && !ReferenceEquals(plate, onTop))
+                {
+                    plate.DetachNode();
+                    plate.AttachNode(layer);
+                    onTop = plate;
+                }
                 plate.SeenFrame = stamp;
                 shown++;
 
@@ -309,6 +318,7 @@ public sealed unsafe class PlateRenderer : IDisposable
     public void Dispose()
     {
         scanner.AfterScan -= Update;
+        onTop = null;
         Array.Clear(pool);
         overlay.Dispose(); // disposes the layer and every plate under it
     }

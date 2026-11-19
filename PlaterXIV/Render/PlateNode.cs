@@ -45,6 +45,8 @@ public sealed unsafe class PlateNode : ResNode
     private readonly TextNode chip;
     private readonly TextNode level;
     private readonly TextNode tag;
+    private readonly ColorImageNode focusMark;
+    private int lastFocus = -1;
     private readonly ColorImageNode border;
     private readonly ColorImageNode track;
     private readonly ColorImageNode fill;
@@ -167,6 +169,19 @@ public sealed unsafe class PlateNode : ResNode
             IsVisible = false,
         };
         level.AttachNode(this);
+
+        // Focus target: a small diamond in front of the level and name (as on the mockups).
+        focusMark = new ColorImageNode
+        {
+            Position = new Vector2(BarX, NameY + NameH - 9f),
+            Size = new Vector2(6f, 6f),
+            OriginX = 3f,
+            OriginY = 3f,
+            RotationDegrees = 45f,
+            Color = skin.Focus,
+            IsVisible = false,
+        };
+        focusMark.AttachNode(this);
 
         // Rule tag like "ADD": dark text on the rule's highlight colour, right after the name.
         tag = new TextNode
@@ -311,6 +326,7 @@ public sealed unsafe class PlateNode : ResNode
         lockBody.Color = skin.CastLocked;
         arrowLeft.Color = skin.Accent;
         arrowRight.Color = skin.Accent;
+        focusMark.Color = skin.Focus;
 
         for (var i = 0; i < MaxDots; i++)
             dotTimers[i].FontSize = skin.NumberFontSize;
@@ -370,6 +386,14 @@ public sealed unsafe class PlateNode : ResNode
             lastLevel = lvl;
             if (lvl > 0) SetLevelText(lvl);
             level.IsVisible = lvl > 0;
+            relayout = true;
+        }
+
+        var focus = d.IsFocus ? 1 : 0;
+        if (focus != lastFocus)
+        {
+            lastFocus = focus;
+            focusMark.IsVisible = focus == 1;
             relayout = true;
         }
 
@@ -454,7 +478,10 @@ public sealed unsafe class PlateNode : ResNode
         var nameWidth = name.GetTextDrawSize(false).X;
         var levelWidth = withLevel ? level.GetTextDrawSize(false).X + 3f : 0f;
         var tagWidth = tag.IsVisible ? tag.GetTextDrawSize(false).X + 8f : 0f;
-        var start = BarX + BarW / 2f - (levelWidth + nameWidth + tagWidth) / 2f;
+        var focusWidth = focusMark.IsVisible ? 11f : 0f;
+        var start = BarX + BarW / 2f - (focusWidth + levelWidth + nameWidth + tagWidth) / 2f;
+        if (focusWidth > 0f) focusMark.X = MathF.Round(start + 1f);
+        start += focusWidth;
         level.X = MathF.Round(start);
         name.X = MathF.Round(start + levelWidth);
         if (tagWidth > 0f)

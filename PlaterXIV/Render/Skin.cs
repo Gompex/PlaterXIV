@@ -41,6 +41,9 @@ public sealed record Skin
     public required Vector4 CastInterruptible { get; init; }
     public required Vector4 CastLocked { get; init; }
     public required Vector4 Expiring { get; init; }
+    /// <summary>Colour of the small focus-target diamond before the name.</summary>
+    public Vector4 Focus { get; init; } = Hex(0xCC79A7);
+
     /// <summary>HP bar split into this many segments by thin dark ticks (0 = smooth bar).</summary>
     public int Segments { get; init; }
     public Vector4 SegmentLine { get; init; } = Hex(0x0B0D0E, 0.7f);
@@ -75,6 +78,7 @@ public sealed record Skin
     public static readonly Skin Ledger = new()
     {
         Name = "Ledger",
+        Focus = Hex(0xB98CE6),
         Text = Hex(0xEEEAF4),
         TextOutline = Hex(0x000000),
         Track = Hex(0x0E0D11, 0.88f),
@@ -97,6 +101,7 @@ public sealed record Skin
     public static readonly Skin Heraldry = new()
     {
         Name = "Heraldry",
+        Focus = Hex(0xB48FD9),
         Text = Hex(0xF1E8D6),
         TextOutline = Hex(0x1A1200),
         Track = Hex(0x090D16, 0.9f),

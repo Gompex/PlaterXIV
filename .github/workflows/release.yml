@@ -123,9 +123,19 @@ jobs:
 
             ConvertTo-Json -InputObject @($out) -Depth 10 | Set-Content $path -Encoding utf8NoBOM
 
+            # README: regenerate the plugin list between the markers from repo.json (append the block if missing).
+            $readme = 'repo\README.md'
+            $text = if (Test-Path $readme) { Get-Content $readme -Raw } else { "# Dalamud plugins`n`nCustom repository: ``https://raw.githubusercontent.com/$env:RELEASE_REPO/main/repo.json```n" }
+            $lines = foreach ($p in ($out | Sort-Object Name)) { "- **$($p.Name)** $($p.AssemblyVersion) - $($p.Punchline)" }
+            $block = "<!-- plugins -->`n## Plugins`n`n" + ($lines -join "`n") + "`n<!-- /plugins -->"
+            $pattern = '(?s)<!-- plugins -->.*?<!-- /plugins -->'
+            if ($text -match $pattern) { $text = [regex]::Replace($text, $pattern, { param($x) $block }) }
+            else { $text = $text.TrimEnd() + "`n`n" + $block + "`n" }
+            Set-Content $readme $text -Encoding utf8NoBOM -NoNewline
+
             git -C repo config user.name 'github-actions[bot]'
             git -C repo config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git -C repo add repo.json
+            git -C repo add repo.json README.md
             git -C repo commit -m "$env:INTERNAL_NAME v$env:VERSION"
             git -C repo push
             if ($LASTEXITCODE -eq 0) { exit 0 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using KamiToolKit.BaseTypes;
 using KamiToolKit.Nodes;
@@ -51,6 +52,10 @@ public sealed unsafe class SettingsWindow : NativeAddon
     private float y;
 
     private int selectedRule = -1;
+    private int ruleScroll;     // first rule shown in the list
+    private int profileScroll;  // first profile shown in the list
+    private TextNode? ruleScrollLabel;
+    private float ruleListWidth;
 
     private readonly PlateData[] previewData;
     private readonly AggroResult[] previewAggro;
@@ -334,31 +339,39 @@ public sealed unsafe class SettingsWindow : NativeAddon
         y = 0f;
         Header(page, "Rules · first match wins · shared by every profile");
 
+        ruleListWidth = listWidth;
         ruleRows = new RuleRow[RuleRows];
         for (var i = 0; i < RuleRows; i++)
         {
-            var index = i;
+            var row = i; // the rule shown in this row is ruleScroll + row
             var rowY = y + i * 26f;
             var on = new CheckboxNode { Position = new Vector2(8f, rowY + 2f), Size = new Vector2(22f, 20f), String = "" };
             on.OnClick = v =>
             {
+                var index = ruleScroll + row;
                 if (suppress || index >= config.Rules.Count) return;
                 config.Rules[index].Enabled = v;
                 RulesEdited();
             };
             on.AttachNode(page);
 
-            var name = Button(page, "", 34f, rowY, 190f, () => SelectRule(index));
+            var name = Button(page, "", 34f, rowY, 190f, () => SelectRule(ruleScroll + row));
             var summary = new TextNode { Position = new Vector2(230f, rowY + 2f), Size = new Vector2(listWidth - 300f, 20f), FontSize = 12, AlignmentType = AlignmentType.Left, TextFlags = TextFlags.Ellipsis };
             summary.AttachNode(page);
-            var up = Button(page, "Up", listWidth - 62f, rowY, 30f, () => MoveRuleUp(index));
-            var delete = Button(page, "X", listWidth - 30f, rowY, 28f, () => DeleteRule(index));
+            var up = Button(page, "Up", listWidth - 62f, rowY, 30f, () => MoveRuleUp(ruleScroll + row));
+            var delete = Button(page, "X", listWidth - 30f, rowY, 28f, () => DeleteRule(ruleScroll + row));
             ruleRows[i] = new RuleRow(on, name, summary, up, delete);
         }
 
         y += RuleRows * 26f + 8f;
         Button(page, "+ Rule for my target", 8f, y, 180f, AddRuleForTarget);
         Button(page, "+ Empty rule", 196f, y, 130f, () => AddRule(string.Empty));
+
+        // Scrolling: mouse wheel over the list, or these two buttons.
+        ruleScrollLabel = new TextNode { Position = new Vector2(listWidth - 132f, y + 3f), Size = new Vector2(70f, 20f), FontSize = 12, AlignmentType = AlignmentType.Right };
+        ruleScrollLabel.AttachNode(page);
+        Button(page, "<", listWidth - 58f, y, 28f, () => ScrollRules(-RuleRows));
+        Button(page, ">", listWidth - 28f, y, 28f, () => ScrollRules(RuleRows));
         y += 34f;
 
         Check(page, "Hide enemies 10 or more levels below me (built-in)", () => config.HideFarBelowMyLevel, v => { config.HideFarBelowMyLevel = v; config.RulesChanged(); });
@@ -458,7 +471,7 @@ public sealed unsafe class SettingsWindow : NativeAddon
         change(config.Rules[selectedRule]);
         config.RulesChanged();
         if (save) config.MarkDirty();
-        RefreshRuleRow(selectedRule);
+        RefreshRuleRow(selectedRule - ruleScroll);
     }
 
     private void RulesEdited()
@@ -479,9 +492,9 @@ public sealed unsafe class SettingsWindow : NativeAddon
 
     private void AddRule(string name)
     {
-        if (config.Rules.Count >= RuleRows) return; // the list shows 10 rules
         config.Rules.Add(new NameRule { Text = name, Highlight = true, Tag = "ADD" });
         selectedRule = config.Rules.Count - 1;
+        ruleScroll = Math.Max(0, config.Rules.Count - RuleRows); // show the new rule
         RulesEdited();
     }
 
@@ -509,16 +522,36 @@ public sealed unsafe class SettingsWindow : NativeAddon
         RulesEdited();
     }
 
-    private void RefreshRuleList()
+    private void ScrollRules(int delta)
     {
-        for (var i = 0; i < ruleRows.Length; i++)
-            RefreshRuleRow(i);
+        var max = Math.Max(0, config.Rules.Count - RuleRows);
+        var next = Math.Clamp(ruleScroll + delta, 0, max);
+        if (next == ruleScroll) return;
+        ruleScroll = next;
+        suppress = true;
+        try { RefreshRuleList(); }
+        finally { suppress = false; }
     }
 
-    private void RefreshRuleRow(int i)
+    private void RefreshRuleList()
     {
-        if (i < 0 || i >= ruleRows.Length) return;
-        var row = ruleRows[i];
+        ruleScroll = Math.Clamp(ruleScroll, 0, Math.Max(0, config.Rules.Count - RuleRows));
+        for (var i = 0; i < ruleRows.Length; i++)
+            RefreshRuleRow(i);
+
+        if (ruleScrollLabel != null)
+        {
+            var count = config.Rules.Count;
+            ruleScrollLabel.String = count <= RuleRows ? $"{count} rules" : $"{ruleScroll + 1}-{Math.Min(count, ruleScroll + RuleRows)} of {count}";
+        }
+    }
+
+    /// <summary>Row i of the list shows rule ruleScroll + i.</summary>
+    private void RefreshRuleRow(int rowIndex)
+    {
+        if (rowIndex < 0 || rowIndex >= ruleRows.Length) return;
+        var row = ruleRows[rowIndex];
+        var i = ruleScroll + rowIndex;
         var exists = i < config.Rules.Count;
         row.On.IsVisible = row.Name.IsVisible = row.Summary.IsVisible = row.Up.IsVisible = row.Delete.IsVisible = exists;
         if (!exists) return;
@@ -562,14 +595,18 @@ public sealed unsafe class SettingsWindow : NativeAddon
         var list = new TextButtonNode[ProfileRows];
         for (var i = 0; i < ProfileRows; i++)
         {
-            var index = i;
-            list[i] = Button(page, "", 8f, 24f + i * 28f, 240f, () =>
+            var row = i; // shows profile profileScroll + row
+            list[i] = Button(page, "", 8f, 24f + i * 28f, 212f, () =>
             {
+                var index = profileScroll + row;
                 if (index >= config.Profiles.Count) return;
                 config.SetActive(config.Profiles[index].Name); // refreshes through ActiveRevision
                 hider.Refresh();
             });
         }
+
+        Button(page, "<", 222f, 24f, 26f, () => ScrollProfiles(-ProfileRows));
+        Button(page, ">", 222f, 24f + (ProfileRows - 1) * 28f, 26f, () => ScrollProfiles(ProfileRows));
 
         var nameLabel = new TextNode { Position = new Vector2(8f, 254f), Size = new Vector2(240f, 18f), FontSize = 12, AlignmentType = AlignmentType.Left, String = "Name of the profile in use" };
         nameLabel.AttachNode(page);
@@ -665,10 +702,20 @@ public sealed unsafe class SettingsWindow : NativeAddon
         return config.Profiles[(index + 1) % config.Profiles.Count].Name;
     }
 
+    private void ScrollProfiles(int delta)
+    {
+        var next = Math.Clamp(profileScroll + delta, 0, Math.Max(0, config.Profiles.Count - ProfileRows));
+        if (next == profileScroll) return;
+        profileScroll = next;
+        suppress = true;
+        try { RefreshProfiles(); }
+        finally { suppress = false; }
+    }
+
     private void AddProfile(PlateProfile profile)
     {
-        if (config.Profiles.Count >= ProfileRows) return; // the list shows 8 profiles
         config.Profiles.Add(profile);
+        profileScroll = Math.Max(0, config.Profiles.Count - ProfileRows); // show the new profile
         config.SetActive(profile.Name);
         hider.Refresh();
     }
@@ -715,13 +762,15 @@ public sealed unsafe class SettingsWindow : NativeAddon
     {
         if (profiles == null) return;
 
-        for (var i = 0; i < profiles.List.Length; i++)
+        profileScroll = Math.Clamp(profileScroll, 0, Math.Max(0, config.Profiles.Count - ProfileRows));
+        for (var row = 0; row < profiles.List.Length; row++)
         {
+            var i = profileScroll + row;
             var exists = i < config.Profiles.Count;
-            profiles.List[i].IsVisible = exists;
+            profiles.List[row].IsVisible = exists;
             if (!exists) continue;
             var p = config.Profiles[i];
-            profiles.List[i].String = ReferenceEquals(p, config.Active) ? $"> {p.Name}  (in use)" : p.Name;
+            profiles.List[row].String = ReferenceEquals(p, config.Active) ? $"> {p.Name}  (in use)" : p.Name;
         }
 
         profiles.Name.String = config.Active.Name;
@@ -790,10 +839,43 @@ public sealed unsafe class SettingsWindow : NativeAddon
             RefreshAll();
         }
 
+        HandleMouseWheel();
         UpdatePreview();
 
         if (config.Dirty && (DateTime.UtcNow - config.DirtySince).TotalSeconds > 1.0)
             config.Save();
+    }
+
+    /// <summary>Mouse wheel over the rule list or the profile list scrolls it by one row.</summary>
+    private void HandleMouseWheel()
+    {
+        var input = UIInputData.Instance();
+        if (input == null) return;
+        ref var mouse = ref input->InputData.CursorInputs;
+        if (mouse.MouseWheel == 0) return;
+        var cursor = new Vector2(mouse.PositionX, mouse.PositionY);
+        var step = -Math.Sign(mouse.MouseWheel); // wheel up = towards the top of the list
+
+        if (tabPages.Count > 4 && tabPages[4].IsVisible && ruleRows.Length > 1
+            && Inside(ruleRows[0].On, ruleRows[^1].On, ruleListWidth, 26f, cursor))
+            ScrollRules(step);
+
+        if (tabPages.Count > 5 && tabPages[5].IsVisible && profiles != null && profiles.List.Length > 1
+            && Inside(profiles.List[0], profiles.List[^1], 248f, 28f, cursor))
+            ScrollProfiles(step);
+    }
+
+    /// <summary>Is the cursor inside the box from the first row to the last row of a list (screen pixels)?</summary>
+    private static bool Inside(NodeBase first, NodeBase last, float width, float rowHeight, Vector2 cursor)
+    {
+        var rows = last.Y - first.Y;
+        var scale = rows > 0f ? (last.ScreenY - first.ScreenY) / rows : 1f;
+        if (scale <= 0f) scale = 1f;
+        var left = first.ScreenX - first.X * scale;
+        var top = first.ScreenY;
+        var right = left + width * scale;
+        var bottom = last.ScreenY + rowHeight * scale;
+        return cursor.X >= left && cursor.X <= right && cursor.Y >= top && cursor.Y <= bottom;
     }
 
     private void UpdatePreview()
@@ -873,6 +955,7 @@ public sealed unsafe class SettingsWindow : NativeAddon
         previewPlates = [];
         previewPanel = null;
         ruleRows = [];
+        ruleScrollLabel = null;
         editor = null;
         profiles = null;
         tabPages.Clear();
